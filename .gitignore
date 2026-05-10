@@ -24,3 +24,4 @@ vcpkg_installed/
 # --- Data ---
 # 如果你的数据量很大，建议只上传示例数据
 # data/ (如果你想上传 data 文件夹，就不要写这一行)
+data/sim_*

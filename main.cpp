@@ -9,6 +9,7 @@
 #include "coordinate_transform.h"
 #include "alignment_solver.h"
 #include "config_reader.h"
+#include "simulation_engine.h"
 #include <iostream>
 #include <iomanip>
 #include <fstream>
@@ -17,6 +18,10 @@
 #include <numeric>
 #include <filesystem>
 #include <sstream>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 // ============================================================
 // Helper: Load Scale from previous result file
@@ -185,6 +190,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // --- Step 1.2: Simulation Mode ---
+    if (cfg.run_mode == "sim") {
+        SimulationEngine::generateDataset(cfg);
+        cfg.gps_file = "../data/sim_gps_trajectory.csv";
+        cfg.colmap_file = "../data/sim_images.txt";
+    }
+
     // --- Step 1.5: Snapshot Mode (Measurement Only) ---
     if (cfg.gps_file.empty() || cfg.gps_file == "none" || 
         cfg.colmap_file.empty() || cfg.colmap_file == "none") {
@@ -349,6 +361,38 @@ int main(int argc, char* argv[]) {
             std::cout << "      REAL DIST:  " << real_dist << " meters" << std::endl;
             std::cout << "      --------------------------" << std::endl;
         }
+    }
+
+    // --- Step 10: Simulation Accuracy Report ---
+    if (cfg.run_mode == "sim") {
+        std::cout << "\n============================================" << std::endl;
+        std::cout << "  Simulation Accuracy Report" << std::endl;
+        std::cout << "============================================" << std::endl;
+        
+        double scale_err_percent = std::abs(result.scale - cfg.sim.true_scale) / cfg.sim.true_scale * 100.0;
+        
+        // Calculate Rotation Error
+        double yaw = cfg.sim.true_rotation_ypr.x() * M_PI / 180.0;
+        double pitch = cfg.sim.true_rotation_ypr.y() * M_PI / 180.0;
+        double roll = cfg.sim.true_rotation_ypr.z() * M_PI / 180.0;
+        Eigen::Matrix3d R_true = (Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()) * 
+                                  Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()) * 
+                                  Eigen::AngleAxisd(roll, Eigen::Vector3d::UnitX())).matrix();
+        
+        Eigen::Matrix3d R_diff = result.rotation.transpose() * R_true;
+        Eigen::AngleAxisd angle_axis(R_diff);
+        double rot_err_deg = angle_axis.angle() * 180.0 / M_PI;
+
+        std::cout << "  [Scale]" << std::endl;
+        std::cout << "    True: " << cfg.sim.true_scale << "  |  Calc: " << result.scale << std::endl;
+        std::cout << "    Error: " << scale_err_percent << " %" << std::endl;
+        
+        std::cout << "  [Rotation]" << std::endl;
+        std::cout << "    Error Angle: " << rot_err_deg << " degrees" << std::endl;
+        
+        std::cout << "  [Robustness]" << std::endl;
+        std::cout << "    Outliers Injected: " << cfg.sim.outlier_count << std::endl;
+        std::cout << "    Points Rejected:   " << (result.total_count - result.inlier_count) << std::endl;
     }
 
     std::cout << "\n============================================" << std::endl;

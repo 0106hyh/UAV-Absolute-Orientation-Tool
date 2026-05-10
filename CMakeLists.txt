@@ -28,6 +28,7 @@ add_executable(uav_orientation
     coordinate_transform.cpp
     alignment_solver.cpp
     config_reader.cpp
+    simulation_engine.cpp
 )
 
 # 链接依赖库

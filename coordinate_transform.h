@@ -78,6 +78,13 @@ public:
   Eigen::Vector3d LLAtoENU(const GPSPoint &point) const;
 
   /**
+   * @brief 将单个ENU点反向转换为LLA坐标 (用于仿真)
+   * @param enu ENU坐标 (米)
+   * @return 该点对应的GPS测量点 (经纬高)
+   */
+  GPSPoint ENUtoLLA(const Eigen::Vector3d &enu) const;
+
+  /**
    * @brief 批量转换GPS点集，构建目标点矩阵 Y
    * @param gps_points GPS点的向量
    * @return 3×N 的 Eigen 矩阵，每列为一个ENU坐标

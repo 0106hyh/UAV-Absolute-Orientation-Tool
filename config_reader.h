@@ -8,7 +8,10 @@
 
 // Stores all configuration parameters loaded from config.yaml
 struct AppConfig {
-    // Input paths
+    // --- Global Mode ---
+    std::string run_mode; // "work" or "sim"
+
+    // --- Input paths ---
     std::string gps_file;
     std::string colmap_file;
 
@@ -35,6 +38,21 @@ struct AppConfig {
         Eigen::Vector3d p2; 
     };
     std::vector<PointPair> measurements;
+
+    // --- Simulation Settings ---
+    struct SimConfig {
+        std::string type;       // "line" or "circle"
+        int num_points;         // Number of points to generate
+        double radius;          // Used if type == "circle"
+        double noise_level;     // Standard deviation of GPS noise in meters
+        
+        // Ground Truth Transform (ENU = s * R * SfM + t)
+        double true_scale;
+        Eigen::Vector3d true_rotation_ypr; // Yaw, Pitch, Roll in degrees
+        Eigen::Vector3d true_translation;  // ENU translation
+        
+        int outlier_count;      // Number of random outliers to inject
+    } sim;
 };
 
 // Load configuration from a YAML file

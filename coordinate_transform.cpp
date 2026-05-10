@@ -48,6 +48,15 @@ Eigen::Vector3d CoordinateTransform::LLAtoENU(const GPSPoint &point) const {
   return Eigen::Vector3d(east, north, up);
 }
 
+GPSPoint CoordinateTransform::ENUtoLLA(const Eigen::Vector3d& enu) const {
+  if (!m_origin_set) {
+    throw std::runtime_error("错误: 调用 ENUtoLLA 前必须先调用 setGPSOrigin 设置参考原点!");
+  }
+  double lat, lon, h;
+  m_projector.Reverse(enu.x(), enu.y(), enu.z(), lat, lon, h);
+  return {lat, lon, h};
+}
+
 Eigen::MatrixXd CoordinateTransform::buildTargetMatrix(
     const std::vector<GPSPoint> &gps_points) const {
   const int N = static_cast<int>(gps_points.size());

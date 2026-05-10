@@ -12,6 +12,9 @@ AppConfig loadConfig(const std::string& config_path) {
         throw std::runtime_error("Failed to load config: " + std::string(e.what()));
     }
 
+    // --- Global Mode ---
+    cfg.run_mode = root["run_mode"] ? root["run_mode"].as<std::string>("work") : "work";
+
     // --- Input ---
     if (root["input"]) {
         cfg.gps_file = root["input"]["gps_file"].as<std::string>("");
@@ -63,9 +66,48 @@ AppConfig loadConfig(const std::string& config_path) {
         }
     }
 
+    // --- Simulation ---
+    if (root["simulation"]) {
+        cfg.sim.type = root["simulation"]["type"].as<std::string>("circle");
+        cfg.sim.num_points = root["simulation"]["num_points"].as<int>(20);
+        cfg.sim.radius = root["simulation"]["radius"].as<double>(30.0);
+        cfg.sim.noise_level = root["simulation"]["noise_level"].as<double>(0.0);
+        
+        if (root["simulation"]["ground_truth"]) {
+            cfg.sim.true_scale = root["simulation"]["ground_truth"]["scale"].as<double>(1.0);
+            
+            auto ypr = root["simulation"]["ground_truth"]["rotation_ypr"];
+            cfg.sim.true_rotation_ypr = Eigen::Vector3d(ypr[0].as<double>(), ypr[1].as<double>(), ypr[2].as<double>());
+            
+            auto trans = root["simulation"]["ground_truth"]["translation"];
+            cfg.sim.true_translation = Eigen::Vector3d(trans[0].as<double>(), trans[1].as<double>(), trans[2].as<double>());
+        } else {
+            cfg.sim.true_scale = 1.0;
+            cfg.sim.true_rotation_ypr = Eigen::Vector3d::Zero();
+            cfg.sim.true_translation = Eigen::Vector3d::Zero();
+        }
+        cfg.sim.outlier_count = root["simulation"]["outlier_count"].as<int>(0);
+    } else {
+        cfg.sim.type = "circle";
+        cfg.sim.num_points = 20;
+        cfg.sim.radius = 30.0;
+        cfg.sim.noise_level = 0.0;
+        cfg.sim.true_scale = 1.0;
+        cfg.sim.true_rotation_ypr = Eigen::Vector3d::Zero();
+        cfg.sim.true_translation = Eigen::Vector3d::Zero();
+        cfg.sim.outlier_count = 0;
+    }
+
     std::cout << "[Config] Loaded from: " << config_path << std::endl;
-    std::cout << "[Config] GPS file:    " << cfg.gps_file << std::endl;
-    std::cout << "[Config] COLMAP file: " << cfg.colmap_file << std::endl;
+    std::cout << "[Config] Run Mode:    " << (cfg.run_mode == "sim" ? "SIMULATION" : "WORK") << std::endl;
+    
+    if (cfg.run_mode != "sim") {
+        std::cout << "[Config] GPS file:    " << cfg.gps_file << std::endl;
+        std::cout << "[Config] COLMAP file: " << cfg.colmap_file << std::endl;
+    } else {
+        std::cout << "[Config] Sim Type:    " << cfg.sim.type << " (N=" << cfg.sim.num_points << ")" << std::endl;
+    }
+    
     std::cout << "[Config] RANSAC:      " << (cfg.ransac_enabled ? "ON" : "OFF")
               << " (iter=" << cfg.ransac_iterations
               << ", thr=" << cfg.ransac_threshold << "m)" << std::endl;
