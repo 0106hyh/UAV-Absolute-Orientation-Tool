@@ -11,12 +11,12 @@
 ## 工作流程 (Workflow)
 ```mermaid
 graph LR
-    A[GPS (LLA)] -->|GeographicLib| B[ENU (Meters)]
-    C[COLMAP Poses] -->|Inverse Transform| D[Camera Centers]
-    B --> E{RANSAC + Umeyama}
+    A["GPS (LLA)"] -->|GeographicLib| B["ENU (Meters)"]
+    C["COLMAP Poses"] -->|Inverse Transform| D["Camera Centers"]
+    B --> E["RANSAC + Umeyama"]
     D --> E
-    E --> F[Alignment Result]
-    F --> G[Real World Trajectory]
+    E --> F["Alignment Result"]
+    F --> G["Real World Trajectory"]
 ```
 
 ## 核心功能 (Key Features)
