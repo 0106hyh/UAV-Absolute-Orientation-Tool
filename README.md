@@ -28,7 +28,7 @@ graph LR
 ## 环境准备 (Prerequisites)
 使用 vcpkg 安装以下依赖：
 ```bash
-vcpkg install eigen3 geographiclib yaml-cpp
+vcpkg install eigen3 geographiclib yaml-cpp nlohmann-json
 ```
 
 ## 快速使用 (Quick Start)
@@ -103,6 +103,42 @@ rmse: 0.000074
 *   **⚡ 极速快照模式 (Snapshot Mode)**：
     如果你已经完成过一次对齐，只需要反复测距，**请将 `config.yaml` 中的 `gps_file` 设为 `""` 或 `"none"`**。
     程序会跳过耗时的数据加载和对齐过程，直接读取上次的 `scale` 瞬间完成新点对的测距。
+
+## 📡 常驻服务模式 (Resident Service Mode)
+为了方便前端应用（如 Electron、Python GUI）集成，程序支持**长连接服务模式**。在该模式下，程序启动后保持运行，通过标准输入输出（Stdin/Stdout）接收 JSON 指令并实时返回结果。
+
+### 1. 启动服务
+在命令行添加 `--service` 标志：
+```bash
+./uav_orientation ../config.yaml --service
+```
+*注：该模式下所有常规日志输出将被静默，只输出纯净的 JSON 响应。*
+
+### 2. 通信协议 (JSON Protocol)
+
+#### 📏 测距指令 (Measure)
+**请求 (Input)**:
+```json
+{"command": "measure", "p1": [x1, y1, z1], "p2": [x2, y2, z2]}
+```
+**响应 (Output)**:
+```json
+{
+  "status": "success",
+  "data": {
+    "model_distance": 1.732,
+    "real_distance_meters": 6.059
+  }
+}
+```
+
+#### 🛠️ 状态查询 (Status)
+**请求 (Input)**: `{"command": "status"}`
+**响应 (Output)**: `{"status": "success", "scale": 3.4985}`
+
+#### 🚪 退出服务 (Exit)
+**请求 (Input)**: `{"command": "exit"}`
+**响应 (Output)**: `{"status": "goodbye"}`
 
 ## 🧪 仿真验证模式 (Simulation Mode)
 为了方便在没有真实数据的情况下测试算法精度，程序内置了**仿真引擎**：

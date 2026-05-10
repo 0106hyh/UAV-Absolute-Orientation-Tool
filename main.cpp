@@ -10,6 +10,8 @@
 #include "alignment_solver.h"
 #include "config_reader.h"
 #include "simulation_engine.h"
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
 #include <iostream>
 #include <iomanip>
 #include <fstream>
@@ -39,13 +41,74 @@ double loadScaleFromTransformFile(const std::string& filepath) {
 }
 
 // ============================================================
+// Service Mode (Resident Process)
+// ============================================================
+void runServiceMode(double scale, std::streambuf* original_buf) {
+    std::string line;
+    // We assume std::cout is currently redirected to a null stream
+    while (std::getline(std::cin, line)) {
+        if (line.empty()) continue;
+        try {
+            auto j = json::parse(line);
+            std::string cmd = j.value("command", "");
+            
+            // Temporary restore cout to talk to the frontend
+            std::cout.rdbuf(original_buf);
+            
+            if (cmd == "measure") {
+                auto p1_vec = j["p1"].get<std::vector<double>>();
+                auto p2_vec = j["p2"].get<std::vector<double>>();
+                if (p1_vec.size() != 3 || p2_vec.size() != 3) {
+                    throw std::runtime_error("p1 and p2 must be arrays of 3 doubles.");
+                }
+                
+                Eigen::Vector3d p1(p1_vec[0], p1_vec[1], p1_vec[2]);
+                Eigen::Vector3d p2(p2_vec[0], p2_vec[1], p2_vec[2]);
+                double model_dist = (p1 - p2).norm();
+                double real_dist = model_dist * scale;
+                
+                json resp;
+                resp["status"] = "success";
+                resp["data"]["model_distance"] = model_dist;
+                resp["data"]["real_distance_meters"] = real_dist;
+                std::cout << resp.dump() << std::endl;
+            } else if (cmd == "status") {
+                json resp;
+                resp["status"] = "success";
+                resp["scale"] = scale;
+                std::cout << resp.dump() << std::endl;
+            } else if (cmd == "exit") {
+                std::cout << "{\"status\":\"goodbye\"}" << std::endl;
+                break;
+            } else {
+                std::cout << "{\"status\":\"error\",\"message\":\"Unknown command\"}" << std::endl;
+            }
+            
+            // Redirect back to null for the rest of the loop
+            static std::stringstream null_stream;
+            std::cout.rdbuf(null_stream.rdbuf());
+            
+        } catch (const std::exception& e) {
+            std::cout.rdbuf(original_buf);
+            json resp;
+            resp["status"] = "error";
+            resp["message"] = e.what();
+            std::cout << resp.dump() << std::endl;
+            static std::stringstream null_stream;
+            std::cout.rdbuf(null_stream.rdbuf());
+        }
+    }
+}
+
+// ============================================================
 // Result Export Functions
 // ============================================================
 
 // Save transformation parameters and measurements to text file
 void saveTransformResult(const std::string& filepath,
                          const AlignmentResult& result,
-                         const AppConfig& cfg) {
+                         const AppConfig& cfg,
+                         bool is_service) {
     // Create output directory if needed
     std::filesystem::path p(filepath);
     if (p.has_parent_path()) {
@@ -99,14 +162,15 @@ void saveTransformResult(const std::string& filepath,
     }
 
     f.close();
-    std::cout << "[Output] Transform saved to: " << filepath << std::endl;
+    if (!is_service) std::cout << "[Output] Transform saved to: " << filepath << std::endl;
 }
 
 // Save aligned trajectory as CSV
 void saveTrajectory(const std::string& filepath,
                     const AlignmentResult& result,
                     const std::vector<ColmapPose>& poses,
-                    const AlignmentSolver& solver) {
+                    const AlignmentSolver& solver,
+                    bool is_service) {
     std::filesystem::path p(filepath);
     if (p.has_parent_path()) {
         std::filesystem::create_directories(p.parent_path());
@@ -131,7 +195,8 @@ void saveTrajectory(const std::string& filepath,
     }
 
     f.close();
-    std::cout << "[Output] Trajectory saved to: " << filepath << std::endl;
+    f.close();
+    if (!is_service) std::cout << "[Output] Trajectory saved to: " << filepath << std::endl;
 }
 
 // ============================================================
@@ -170,11 +235,26 @@ std::vector<MatchedPair> matchByOrder(
 // Main Program
 // ============================================================
 int main(int argc, char* argv[]) {
-    std::cout << "============================================" << std::endl;
-    std::cout << "  UAV 3D Absolute Orientation Tool" << std::endl;
-    std::cout << "============================================" << std::endl;
-    std::cout << std::fixed << std::setprecision(6) << std::endl;
+    // --- Step 0: Parse Service Mode Early ---
+    bool is_service = false;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--service") {
+            is_service = true;
+            break;
+        }
+    }
 
+    std::streambuf* original_cout_buf = std::cout.rdbuf();
+    static std::stringstream null_stream;
+    if (is_service) {
+        std::cout.rdbuf(null_stream.rdbuf());
+    }
+
+    if (!is_service) {        std::cout << "============================================" << std::endl;
+        std::cout << "  UAV 3D Absolute Orientation Tool" << std::endl;
+        std::cout << "============================================" << std::endl;
+        std::cout << std::fixed << std::setprecision(6) << std::endl;
+    }
     // --- Step 1: Load Configuration ---
     std::string config_path = "config.yaml";
     if (argc > 1) {
@@ -186,13 +266,18 @@ int main(int argc, char* argv[]) {
         cfg = loadConfig(config_path);
     } catch (const std::exception& e) {
         std::cerr << "[Error] " << e.what() << std::endl;
-        std::cerr << "Usage: uav_orientation.exe [config.yaml]" << std::endl;
+        std::cerr << "Usage: uav_orientation.exe [config.yaml] [--service]" << std::endl;
         return 1;
     }
 
+
     // --- Step 1.2: Simulation Mode ---
     if (cfg.run_mode == "sim") {
-        SimulationEngine::generateDataset(cfg);
+        if (!is_service) SimulationEngine::generateDataset(cfg);
+        else {
+            // Internal call to generate data without printing too much
+            SimulationEngine::generateDataset(cfg); 
+        }
         cfg.gps_file = "../data/sim_gps_trajectory.csv";
         cfg.colmap_file = "../data/sim_images.txt";
     }
@@ -201,11 +286,12 @@ int main(int argc, char* argv[]) {
     if (cfg.gps_file.empty() || cfg.gps_file == "none" || 
         cfg.colmap_file.empty() || cfg.colmap_file == "none") {
         
-        std::cout << "\n============================================" << std::endl;
-        std::cout << "  SNAPSHOT MODE (Measurement Only)" << std::endl;
-        std::cout << "============================================" << std::endl;
-        std::cout << "[Info] Skipping full alignment..." << std::endl;
-        
+        if (!is_service) {
+            std::cout << "\n============================================" << std::endl;
+            std::cout << "  SNAPSHOT MODE (Measurement Only)" << std::endl;
+            std::cout << "============================================" << std::endl;
+            std::cout << "[Info] Skipping full alignment..." << std::endl;
+        }        
         double scale = loadScaleFromTransformFile(cfg.transform_file);
         if (scale < 0) {
             std::cerr << "[Error] Cannot read scale from: " << cfg.transform_file << std::endl;
@@ -246,12 +332,18 @@ int main(int argc, char* argv[]) {
             std::cout << "[Info] No measurements found in config.yaml." << std::endl;
         }
         
-        std::cout << "============================================" << std::endl;
+        if (is_service) {
+            runServiceMode(scale, original_cout_buf);
+            std::cout.rdbuf(original_cout_buf); // Restore before exit
+            return 0;
+        }
+
+        if (!is_service) std::cout << "============================================" << std::endl;
         return 0;
     }
 
     // --- Step 2: Load GPS Data ---
-    std::cout << "\n--- Loading GPS Data ---" << std::endl;
+    if (!is_service) std::cout << "\n--- Loading GPS Data ---" << std::endl;
     std::vector<GPSPoint> gps_points;
     try {
         gps_points = CoordinateTransform::loadGPSFromCSV(cfg.gps_file);
@@ -259,7 +351,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "[Error] GPS loading failed: " << e.what() << std::endl;
         return 1;
     }
-    std::cout << "[GPS] Loaded " << gps_points.size() << " points" << std::endl;
+    if (!is_service) std::cout << "[GPS] Loaded " << gps_points.size() << " points" << std::endl;
 
     if (gps_points.size() < 3) {
         std::cerr << "[Error] Need at least 3 GPS points for alignment" << std::endl;
@@ -267,7 +359,7 @@ int main(int argc, char* argv[]) {
     }
 
     // --- Step 3: Load COLMAP Poses ---
-    std::cout << "\n--- Loading COLMAP Data ---" << std::endl;
+    if (!is_service) std::cout << "\n--- Loading COLMAP Data ---" << std::endl;
     std::vector<ColmapPose> colmap_poses;
     try {
         colmap_poses = CoordinateTransform::loadColmapPoses(cfg.colmap_file);
@@ -275,12 +367,12 @@ int main(int argc, char* argv[]) {
         std::cerr << "[Error] COLMAP loading failed: " << e.what() << std::endl;
         return 1;
     }
-    std::cout << "[COLMAP] Loaded " << colmap_poses.size() << " poses" << std::endl;
+    if (!is_service) std::cout << "[COLMAP] Loaded " << colmap_poses.size() << " poses" << std::endl;
 
     // --- Step 4: Match GPS & COLMAP Data ---
-    std::cout << "\n--- Matching Data ---" << std::endl;
+    if (!is_service) std::cout << "\n--- Matching Data ---" << std::endl;
     std::vector<MatchedPair> matches = matchByOrder(gps_points, colmap_poses);
-    std::cout << "[Match] Paired " << matches.size() << " points" << std::endl;
+    if (!is_service) std::cout << "[Match] Paired " << matches.size() << " points" << std::endl;
 
     if (matches.size() < 3) {
         std::cerr << "[Error] Need at least 3 matched pairs" << std::endl;
@@ -288,7 +380,7 @@ int main(int argc, char* argv[]) {
     }
 
     // --- Step 5: Coordinate Conversion (LLA -> ENU) ---
-    std::cout << "\n--- Coordinate Conversion ---" << std::endl;
+    if (!is_service) std::cout << "\n--- Coordinate Conversion ---" << std::endl;
     CoordinateTransform transform;
 
     if (cfg.auto_origin) {
@@ -317,7 +409,7 @@ int main(int argc, char* argv[]) {
     }
 
     // --- Step 6: Alignment ---
-    std::cout << "\n--- Running Alignment ---" << std::endl;
+    if (!is_service) std::cout << "\n--- Running Alignment ---" << std::endl;
     AlignmentSolver solver;
     AlignmentResult result;
 
@@ -331,40 +423,50 @@ int main(int argc, char* argv[]) {
     }
 
     // --- Step 7: Print Results ---
-    std::cout << "\n============================================" << std::endl;
-    std::cout << "  Alignment Results" << std::endl;
-    std::cout << "============================================" << std::endl;
-    std::cout << "  Scale factor:   " << result.scale << std::endl;
-    std::cout << "  RMSE:           " << result.rmse << " m" << std::endl;
-    std::cout << "  Inliers:        " << result.inlier_count
-              << " / " << result.total_count << std::endl;
-    std::cout << "\n  Rotation matrix:" << std::endl;
-    std::cout << result.rotation << std::endl;
-    std::cout << "\n  Translation (m): " << result.translation.transpose() << std::endl;
+    if (!is_service) {
+        std::cout << "\n============================================" << std::endl;
+        std::cout << "  Alignment Results" << std::endl;
+        std::cout << "============================================" << std::endl;
+        std::cout << "  Scale factor:   " << result.scale << std::endl;
+        std::cout << "  RMSE:           " << result.rmse << " m" << std::endl;
+        std::cout << "  Inliers:        " << result.inlier_count
+                  << " / " << result.total_count << std::endl;
+        std::cout << "\n  Rotation matrix:" << std::endl;
+        std::cout << result.rotation << std::endl;
+        std::cout << "\n  Translation (m): " << result.translation.transpose() << std::endl;
+    }
 
     // --- Step 8: Save Results ---
-    std::cout << "\n--- Saving Results ---" << std::endl;
-    saveTransformResult(cfg.transform_file, result, cfg);
-    saveTrajectory(cfg.trajectory_file, result, colmap_poses, solver);
+    if (!is_service) std::cout << "\n--- Saving Results ---" << std::endl;
+    saveTransformResult(cfg.transform_file, result, cfg, is_service);
+    saveTrajectory(cfg.trajectory_file, result, colmap_poses, solver, is_service);
 
     // --- Step 9: Custom Measurements ---
     if (!cfg.measurements.empty()) {
-        std::cout << "\n--- Distance Measurements ---" << std::endl;
+        if (!is_service) std::cout << "\n--- Distance Measurements ---" << std::endl;
         for (size_t i = 0; i < cfg.measurements.size(); ++i) {
             const auto& pair = cfg.measurements[i];
             double model_dist = (pair.p1 - pair.p2).norm();
             double real_dist = model_dist * result.scale;
             
-            std::cout << "  [" << i << "] P1: (" << pair.p1.transpose() << ")" << std::endl;
-            std::cout << "      P2: (" << pair.p2.transpose() << ")" << std::endl;
-            std::cout << "      Model dist: " << model_dist << std::endl;
-            std::cout << "      REAL DIST:  " << real_dist << " meters" << std::endl;
-            std::cout << "      --------------------------" << std::endl;
+            if (!is_service) {
+                std::cout << "  [" << i << "] P1: (" << pair.p1.transpose() << ")" << std::endl;
+                std::cout << "      P2: (" << pair.p2.transpose() << ")" << std::endl;
+                std::cout << "      Model dist: " << model_dist << std::endl;
+                std::cout << "      REAL DIST:  " << real_dist << " meters" << std::endl;
+                std::cout << "      --------------------------" << std::endl;
+            }
         }
     }
 
+    if (is_service) {
+        runServiceMode(result.scale, original_cout_buf);
+        std::cout.rdbuf(original_cout_buf); // Restore before exit
+        return 0;
+    }
+
     // --- Step 10: Simulation Accuracy Report ---
-    if (cfg.run_mode == "sim") {
+    if (cfg.run_mode == "sim" && !is_service) {
         std::cout << "\n============================================" << std::endl;
         std::cout << "  Simulation Accuracy Report" << std::endl;
         std::cout << "============================================" << std::endl;
@@ -395,9 +497,11 @@ int main(int argc, char* argv[]) {
         std::cout << "    Points Rejected:   " << (result.total_count - result.inlier_count) << std::endl;
     }
 
-    std::cout << "\n============================================" << std::endl;
-    std::cout << "  Done! Check output files for details." << std::endl;
-    std::cout << "============================================" << std::endl;
+    if (!is_service) {
+        std::cout << "\n============================================" << std::endl;
+        std::cout << "  Done! Check output files for details." << std::endl;
+        std::cout << "============================================" << std::endl;
+    }
 
     return 0;
 }

@@ -22,6 +22,9 @@ find_package(GeographicLib CONFIG REQUIRED)
 # yaml-cpp —— 配置文件解析库
 find_package(yaml-cpp CONFIG REQUIRED)
 
+# nlohmann_json —— JSON 解析库
+find_package(nlohmann_json CONFIG REQUIRED)
+
 # 定义可执行文件
 add_executable(uav_orientation
     main.cpp
@@ -36,4 +39,5 @@ target_link_libraries(uav_orientation PRIVATE
     Eigen3::Eigen
     GeographicLib::GeographicLib
     yaml-cpp::yaml-cpp
+    nlohmann_json::nlohmann_json
 )
