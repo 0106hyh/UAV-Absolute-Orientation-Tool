@@ -1,0 +1,26 @@
+# --- C++ Build ---
+build/
+bin/
+obj/
+*.exe
+*.obj
+*.pdb
+*.ilk
+*.suo
+*.user
+
+# --- VS Code & IDE ---
+.vscode/
+.vs/
+*.swp
+*.DS_Store
+
+# --- Project Specific ---
+# 建议不要把测试产生的输出文件传上去
+output/
+# vcpkg 本地环境通常不需要上传
+vcpkg_installed/
+
+# --- Data ---
+# 如果你的数据量很大，建议只上传示例数据
+# data/ (如果你想上传 data 文件夹，就不要写这一行)

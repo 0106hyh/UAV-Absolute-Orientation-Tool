@@ -1,0 +1,49 @@
+# ============================================================
+# 无人机三维重建 - 绝对定向配置文件
+# ============================================================
+# 请根据你的实际数据修改以下路径和参数
+
+# --- 输入数据路径 ---
+input:
+  # GPS 轨迹文件 (CSV 格式: 纬度, 经度, 高度)
+  gps_file: "../data/gps_trajectory.csv"
+
+  # COLMAP 输出文件 (稀疏重建导出的 images.txt)
+  colmap_file: "../data/images.txt"
+
+# --- ENU 坐标原点设置 ---
+# 通常设为起飞点或第一个 GPS 点
+# 设置为 "auto" 则自动取 gps_file 里的第一个点作为原点
+enu_origin:
+  mode: "auto"          # 可选: "auto" (自动) 或 "manual" (手动)
+  latitude: 39.908000   # 仅在 mode 为 "manual" 时有效
+  longitude: 116.397000
+  altitude: 50.0
+
+# --- RANSAC 鲁棒对齐参数 ---
+ransac:
+  enabled: true         # 是否启用 RANSAC (false 则使用普通 Umeyama，不剔除坏点)
+  iterations: 2000      # 随机采样迭代次数
+  threshold: 5.0        # 内点判定门槛 (米)。RTK 数据建议调小至 0.2-0.5
+  min_inlier_ratio: 0.5 # 最小内点比例要求
+
+# --- 输出设置 ---
+output:
+  # 保存计算出的变换矩阵 (尺度 s, 旋转 R, 平移 t)
+  transform_file: "output/transform_result.txt"
+
+  # 保存对齐后的相机位置轨迹 (带有地理坐标的 CSV)
+  trajectory_file: "output/aligned_trajectory.csv"
+
+  # 是否在终端打印每个点的详细误差信息
+  verbose: true
+
+# --- 模型测距工具 ---
+# 在此处输入 3D 模型坐标系下的点坐标（无量纲空间）
+# 程序将自动计算并输出它们在现实世界中对应的物理距离（单位：米）
+measurements:
+  - p1: [0.1, 0.2, 0.3]
+    p2: [3.9, -0.01, 0.6]
+  # 你可以添加更多点对
+  # - p1: [x, y, z]
+  #   p2: [x, y, z]
